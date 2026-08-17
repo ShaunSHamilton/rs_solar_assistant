@@ -1,0 +1,23 @@
+[package]
+name = "rs_solar_assistant"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[dependencies]
+reqwest = { version = "0.13.4", features = ["query"] }
+serde = "1.0.229"
+serde_json = "1.0.151"
+thiserror = "2.0.19"
+tokio = { version = "1.53.1", features = ["full"] }
+tokio-tungstenite = { version = "0.30.0", optional = true }
+tracing = { version = "0.1.44", optional = true }
+
+[features]
+default = ["cloud", "device", "rustls-tls", "websocket"]
+cloud = []                                                                   # cloud REST client (reqwest)
+device = []                                                                  # device REST client (reqwest)
+websocket = ["dep:tokio-tungstenite"]                                        # Phoenix Channel WS client
+rustls-tls = ["reqwest/rustls", "tokio-tungstenite/rustls-tls-native-roots"]
+native-tls = ["reqwest/native-tls", "tokio-tungstenite/native-tls"]
+tracing = ["dep:tracing", "tokio/tracing"]

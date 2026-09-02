@@ -29,6 +29,7 @@ reqwest = { version = "0.13.4", default-features = false, features = [
 ], optional = true }
 rustls = { version = "0.23.43", default-features = false, optional = true }
 tokio = { version = "1.53.1", default-features = false, features = [
+  "macros",
   "time",
 ], optional = true }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = [
@@ -42,7 +43,13 @@ futures-util = { version = "0.3.34", default-features = false, features = [
   "std",
   "sink",
 ] }
-tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread"] }
+percent-encoding = "2.3.2"
+tokio = { version = "1.53.1", features = [
+  "macros",
+  "net",
+  "rt-multi-thread",
+  "test-util",
+] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = [
   "connect",
   "handshake",

@@ -6,12 +6,14 @@
 
 use std::borrow::Cow;
 
+#[cfg(feature = "cloud")]
 use serde_json::Value;
 
 /// Placeholder substituted for a credential value.
 pub(crate) const REDACTED: &str = "[REDACTED]";
 
 /// Keys whose values are masked before a body or parameter map is logged.
+#[cfg(any(feature = "cloud", feature = "websocket"))]
 pub(crate) const SENSITIVE_KEYS: &[&str] =
     &["token", "site_key", "site-key", "api_key", "password"];
 
@@ -41,6 +43,7 @@ pub(crate) fn safe_url(url: &str) -> Cow<'_, str> {
 }
 
 /// Renders a response body for a debug log with credential values masked.
+#[cfg(feature = "cloud")]
 ///
 /// Non-JSON and non-object bodies are returned as trimmed text: there are no
 /// keys to mask, and dropping the body entirely would defeat the log.
@@ -60,6 +63,7 @@ pub(crate) fn safe_body(body: &[u8]) -> String {
 }
 
 /// Whether a key names a credential, compared case-insensitively.
+#[cfg(any(feature = "cloud", feature = "websocket"))]
 pub(crate) fn is_sensitive(key: &str) -> bool {
     SENSITIVE_KEYS
         .iter()
@@ -67,6 +71,7 @@ pub(crate) fn is_sensitive(key: &str) -> bool {
 }
 
 /// Masks `value` when `key` names a credential, for logging key/value pairs.
+#[cfg(feature = "cloud")]
 pub(crate) fn safe_value<'a>(key: &str, value: &'a str) -> &'a str {
     if is_sensitive(key) { REDACTED } else { value }
 }
@@ -118,6 +123,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "cloud")]
     #[test]
     fn masks_credential_fields_in_a_json_body() {
         let body = br#"{"token": "supersecret", "site_key": "topsecret", "host": "h"}"#;
@@ -128,6 +134,7 @@ mod tests {
         assert!(redacted.contains(r#""host":"h""#));
     }
 
+    #[cfg(feature = "cloud")]
     #[test]
     fn passes_non_json_bodies_through() {
         assert_eq!(safe_body(b"  <html>nope</html>  "), "<html>nope</html>");

@@ -1,5 +1,6 @@
 //! The crate's error type.
 
+#[cfg(feature = "rest")]
 use crate::redact::safe_url;
 
 /// Convenience alias for results returned by this crate.
@@ -94,6 +95,7 @@ impl Error {
     }
 
     /// Builds an [`Error::Api`], stripping userinfo from `url`.
+    #[cfg(feature = "rest")]
     pub(crate) fn api(method: &'static str, url: &str, status: u16) -> Self {
         Self::Api {
             status,
@@ -103,6 +105,7 @@ impl Error {
     }
 
     /// Builds an [`Error::InvalidResponse`], stripping userinfo from `url`.
+    #[cfg(feature = "device")]
     pub(crate) fn invalid_response(what: &str, url: &str) -> Self {
         Self::InvalidResponse(format!("{what} from {}", safe_url(url)))
     }
@@ -112,6 +115,7 @@ impl Error {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "rest")]
     #[test]
     fn api_error_reports_its_status_and_hides_userinfo() {
         let err = Error::api("GET", "http://admin:secret@device/api/v1/metrics", 401);
@@ -122,6 +126,7 @@ mod tests {
         assert!(!message.contains("secret"), "{message}");
     }
 
+    #[cfg(feature = "device")]
     #[test]
     fn malformed_body_has_no_status_and_no_literal_none() {
         let err = Error::invalid_response("invalid JSON", "http://device/api/v1/system");

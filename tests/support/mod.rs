@@ -2,6 +2,9 @@
 
 #![allow(dead_code)]
 
+#[cfg(feature = "websocket")]
+pub mod phoenix;
+
 use std::{
     future::Future,
     io,

@@ -10,7 +10,7 @@
 //! | ------ | -------- | ---------- |
 //! | [`cloud`] | `solar-assistant.io` | Listing sites, minting a short-lived site token |
 //! | [`device`] | A unit, directly or through the cloud proxy | Reading and writing metrics on demand |
-//! | `socket` | A unit's Phoenix Channels WebSocket | Streaming metrics as they change |
+//! | [`socket`] | A unit's Phoenix Channels WebSocket | Streaming metrics as they change |
 //!
 //! # Reading metrics from a unit on your network
 //!
@@ -21,6 +21,29 @@
 //! let device = DeviceClient::new("192.168.1.100", Auth::password("<web-password>"));
 //! for metric in device.metrics().await? {
 //!     println!("{} = {} {}", metric.name, metric.value, metric.unit);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Streaming metrics
+//!
+//! ```no_run
+//! use futures_util::StreamExt;
+//! use rs_solar_assistant::{Auth, Socket, socket::Options};
+//!
+//! # async fn example() -> rs_solar_assistant::Result<()> {
+//! let mut socket = Socket::connect(Options::local(
+//!     "192.168.1.100",
+//!     Auth::password("<web-password>"),
+//! ))
+//! .await?;
+//! socket.subscribe_metrics([]).await?;
+//!
+//! let mut metrics = socket.metrics();
+//! while let Some(metric) = metrics.next().await {
+//!     let metric = metric?;
+//!     println!("{} = {}", metric.topic, metric.value);
 //! }
 //! # Ok(())
 //! # }
@@ -50,7 +73,7 @@
 //! | ------- | ------- | --------- |
 //! | `cloud` | yes | [`cloud::Client`], on `reqwest` |
 //! | `device` | yes | [`device::Client`], on `reqwest` |
-//! | `websocket` | yes | the WebSocket client, on `tokio-tungstenite` |
+//! | `websocket` | yes | [`socket::Socket`], on `tokio-tungstenite` |
 //! | `rustls-tls` | yes | TLS through `rustls` |
 //! | `native-tls` | no | TLS through the platform's TLS stack |
 //!
@@ -81,6 +104,9 @@ pub mod cloud;
 #[cfg(feature = "device")]
 #[cfg_attr(docsrs, doc(cfg(feature = "device")))]
 pub mod device;
+#[cfg(feature = "websocket")]
+#[cfg_attr(docsrs, doc(cfg(feature = "websocket")))]
+pub mod socket;
 
 pub use crate::{
     auth::Auth,
@@ -96,6 +122,9 @@ pub use crate::cloud::{
 #[cfg(feature = "device")]
 #[cfg_attr(docsrs, doc(cfg(feature = "device")))]
 pub use crate::device::{Client as DeviceClient, Scheme};
+#[cfg(feature = "websocket")]
+#[cfg_attr(docsrs, doc(cfg(feature = "websocket")))]
+pub use crate::socket::{Event, Message, Options as SocketOptions, Socket, TopicFilter};
 
 /// The `reqwest` version this crate is built against, re-exported so callers
 /// can hand a pre-configured [`reqwest::Client`] to a client builder without

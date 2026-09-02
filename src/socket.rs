@@ -283,6 +283,12 @@ pub enum Event {
 /// Owns the connection: reading, writing, and the heartbeat all happen on the
 /// task that drives it, so there is no background task to leak and no shared
 /// mutable socket to guard.
+///
+/// The heartbeat therefore rides along with whatever is reading - it goes out
+/// while you await [`next_event`](Self::next_event), either stream, or
+/// [`set_setting`](Self::set_setting). A socket nobody polls sends nothing, so
+/// keep one polled (in a `tokio::spawn`, or a `select!` arm) if you need it to
+/// stay open while idle.
 pub struct Socket {
     sink: SplitSink<Ws, WsMessage>,
     stream: SplitStream<Ws>,

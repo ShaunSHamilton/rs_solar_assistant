@@ -244,6 +244,12 @@ socket.set_setting("inverter_1/power_mode", "Off grid with relay").await?;
 An existing subscription is reused, so topic filters survive the write. A refusal is `Error::SettingRejected`; silence for ten seconds
 is `Error::Channel` rather than a hang.
 
+### Keeping the connection open
+
+The socket has no background task: the 30-second heartbeat goes out on whichever call is reading it - `next_event()`, either stream, or
+`set_setting()`. A socket nobody polls sends nothing, so keep one polled if it has to stay open while idle. Shorten the interval with
+`Options::heartbeat_interval` when something between you and the unit drops idle connections sooner.
+
 ### Everything else on the channel
 
 `metrics()` filters the stream down to values. `events()` yields the rest too - metric definitions, system snapshots, and any frame

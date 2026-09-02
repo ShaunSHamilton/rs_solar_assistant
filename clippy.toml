@@ -1,0 +1,2 @@
+# Product and protocol names that are not code items.
+doc-valid-idents = ["SolarAssistant", "WebSocket", "WebSockets", "JavaScript", ".."]

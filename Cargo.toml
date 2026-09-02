@@ -2,22 +2,75 @@
 name = "rs_solar_assistant"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.90"
 license = "Apache-2.0"
+description = "Rust client for SolarAssistant - cloud API, device REST, and real-time WebSocket"
+readme = "README.md"
+repository = "https://github.com/Solar-Assistant/rs_solar_assistant"
+keywords = ["solar-assistant", "solar", "inverter", "battery", "homeassistant"]
+categories = ["api-bindings", "web-programming::http-client"]
 
 [dependencies]
-reqwest = { version = "0.13.4", features = ["query"] }
-serde = "1.0.229"
+percent-encoding = "2.3.2"
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = "2.0.19"
-tokio = { version = "1.53.1", features = ["full"] }
-tokio-tungstenite = { version = "0.30.0", optional = true }
-tracing = { version = "0.1.44", optional = true }
+tracing = "0.1.44"
+
+futures-util = { version = "0.3.34", default-features = false, features = [
+  "std",
+  "sink",
+], optional = true }
+reqwest = { version = "0.13.4", default-features = false, features = [
+  "http2",
+  "json",
+  "query",
+  "system-proxy",
+], optional = true }
+rustls = { version = "0.23.43", default-features = false, optional = true }
+tokio = { version = "1.53.1", default-features = false, features = [
+  "time",
+], optional = true }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = [
+  "connect",
+  "handshake",
+], optional = true }
+
+[dev-dependencies]
+futures-util = { version = "0.3.34", default-features = false, features = [
+  "std",
+  "sink",
+] }
+tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = [
+  "connect",
+  "handshake",
+] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+wiremock = "0.6.5"
 
 [features]
-default = ["cloud", "device", "rustls-tls", "websocket"]
-cloud = []                                                                   # cloud REST client (reqwest)
-device = []                                                                  # device REST client (reqwest)
-websocket = ["dep:tokio-tungstenite"]                                        # Phoenix Channel WS client
-rustls-tls = ["reqwest/rustls", "tokio-tungstenite/rustls-tls-native-roots"]
-native-tls = ["reqwest/native-tls", "tokio-tungstenite/native-tls"]
-tracing = ["dep:tracing", "tokio/tracing"]
+default = ["cloud", "device", "websocket", "rustls-tls"]
+
+# Cloud REST client (`cloud::Client`).
+cloud = ["rest"]
+# Device REST client (`device::Client`).
+device = ["rest"]
+# Phoenix Channels WebSocket client (`socket::Socket`).
+websocket = ["dep:futures-util", "dep:tokio", "dep:tokio-tungstenite"]
+# Shared HTTP plumbing behind `cloud` and `device`; not useful on its own.
+rest = ["dep:reqwest"]
+
+# TLS backends. Pick exactly one; enabling both wastes build time and only the
+# rustls stack is used by `reqwest`.
+rustls-tls = [
+  "dep:rustls",
+  "reqwest?/rustls",
+  "rustls/aws-lc-rs",
+  "tokio-tungstenite?/rustls-tls-native-roots",
+]
+native-tls = ["reqwest?/native-tls", "tokio-tungstenite?/native-tls"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

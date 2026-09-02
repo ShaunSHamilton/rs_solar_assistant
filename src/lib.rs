@@ -108,6 +108,11 @@ pub mod device;
 #[cfg_attr(docsrs, doc(cfg(feature = "websocket")))]
 pub mod socket;
 
+/// Compiles the README's examples as doctests, so they cannot drift.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct Readme;
+
 pub use crate::{
     auth::Auth,
     error::{Error, Result},

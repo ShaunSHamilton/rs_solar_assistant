@@ -422,7 +422,7 @@ impl Socket {
     /// Everything the unit pushes, as a stream.
     ///
     /// The stream is pinned on the heap once, so it can be polled with
-    /// [`StreamExt::next`](futures_util::StreamExt::next) without the caller
+    /// [`futures_util::StreamExt::next`] without the caller
     /// pinning it.
     pub fn events(&mut self) -> impl Stream<Item = Result<Event>> + Unpin + '_ {
         Box::pin(futures_util::stream::unfold(self, |socket| async move {

@@ -16,20 +16,20 @@
 //! ```
 
 use std::{
-    collections::BTreeMap,
     fmt,
     future::{Future, IntoFuture},
     pin::Pin,
     time::Duration,
 };
 
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::{
     Auth,
     error::{Error, Result},
-    redact::{REDACTED, safe_body, safe_url, safe_value},
+    redact::{REDACTED, safe_body, safe_query_url},
     serde_util::null_default,
 };
 
@@ -130,47 +130,58 @@ impl Client {
 
     /// `GET <path>`, returning the raw response body.
     ///
-    /// An escape hatch for endpoints this crate does not model yet. Query
-    /// parameters are sent as given; see [`SitesRequest`] for the `?q=` filter
-    /// syntax the list endpoints use.
-    pub async fn get(&self, path: &str, query: &[(&str, String)]) -> Result<Vec<u8>> {
-        self.send("GET", path, query).await
+    /// An escape hatch for endpoints this crate does not model yet. `query` is
+    /// anything `reqwest` can serialise, such as a slice of pairs; see
+    /// [`SitesRequest`] for the `?q=` filter syntax the list endpoints use.
+    ///
+    /// ```no_run
+    /// # use rs_solar_assistant::CloudClient;
+    /// # async fn example(cloud: CloudClient) -> rs_solar_assistant::Result<()> {
+    /// let body = cloud.get("/api/v1/sites", &[("limit", "1")]).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get<Q>(&self, path: &str, query: &Q) -> Result<Vec<u8>>
+    where
+        Q: Serialize + ?Sized,
+    {
+        self.send(Method::GET, "GET", path, query).await
     }
 
     /// `POST <path>` with no request body, returning the raw response body.
     pub async fn post(&self, path: &str) -> Result<Vec<u8>> {
-        self.send("POST", path, &[]).await
+        self.send(Method::POST, "POST", path, &()).await
     }
 
-    async fn send(
+    async fn send<Q>(
         &self,
-        method: &'static str,
+        method: Method,
+        name: &'static str,
         path: &str,
-        query: &[(&str, String)],
-    ) -> Result<Vec<u8>> {
-        let url = format!("{}{path}", self.base_url);
-        tracing::debug!(target: "rs_solar_assistant::cloud", "> {method} {} {}", safe_url(&url), format_query(query));
-
-        let request = match method {
-            "POST" => self.http.post(&url),
-            _ => self.http.get(&url),
-        };
-        let response = request
+        query: &Q,
+    ) -> Result<Vec<u8>>
+    where
+        Q: Serialize + ?Sized,
+    {
+        // Built before sending so the log and any error carry the encoded
+        // query, which is what tells two otherwise identical requests apart.
+        let request = self
+            .http
+            .request(method, format!("{}{path}", self.base_url))
             .bearer_auth(&self.api_key)
             .timeout(self.timeout)
             .query(query)
-            .send()
-            .await?;
+            .build()?;
+        let url = request.url().to_string();
+        tracing::debug!(target: "rs_solar_assistant::cloud", "> {name} {}", safe_query_url(&url));
 
+        let response = self.http.execute(request).await?;
         let status = response.status();
-        // Take the URL from the response: it carries the encoded query, which
-        // is what tells two otherwise identical requests apart in an error.
-        let url = response.url().to_string();
         let body = response.bytes().await?;
         tracing::debug!(target: "rs_solar_assistant::cloud", "< {status} {}", safe_body(&body));
 
         if !status.is_success() {
-            return Err(Error::api(method, &url, status.as_u16()));
+            return Err(Error::api(name, &url, status.as_u16()));
         }
         Ok(body.to_vec())
     }
@@ -490,15 +501,6 @@ impl From<AuthorizeResponse> for Auth {
 fn parse_json<T: serde::de::DeserializeOwned>(body: &[u8], what: &str) -> Result<T> {
     serde_json::from_slice(body)
         .map_err(|err| Error::InvalidResponse(format!("could not read the {what}: {err}")))
-}
-
-/// Renders query parameters for a debug log, masking credential values.
-fn format_query(query: &[(&str, String)]) -> String {
-    let masked: BTreeMap<&str, &str> = query
-        .iter()
-        .map(|(key, value)| (*key, safe_value(key, value)))
-        .collect();
-    format!("{masked:?}")
 }
 
 #[cfg(test)]

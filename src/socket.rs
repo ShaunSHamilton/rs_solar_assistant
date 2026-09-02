@@ -57,14 +57,14 @@ use tokio_tungstenite::{
     tungstenite::{
         Error as WsError, Message as WsMessage,
         client::IntoClientRequest,
-        http::{HeaderValue, Request, Uri},
+        http::{HeaderValue, Request},
     },
 };
 
 use crate::{
     Auth, Metric,
     error::{Error, Result},
-    redact::{REDACTED, safe_url},
+    redact::{safe_query_url, safe_url},
 };
 
 /// How often a heartbeat frame is sent to keep the channel alive.
@@ -668,7 +668,7 @@ impl Socket {
         tracing::debug!(
             target: "rs_solar_assistant::socket",
             "> WS {} headers={:?}",
-            redacted_url(request.uri()),
+            safe_query_url(&request.uri().to_string()),
             request.headers().keys().collect::<Vec<_>>(),
         );
 
@@ -738,25 +738,6 @@ fn build_request(host: &str, auth: &Auth, via_cloud: bool) -> Result<Request<()>
         }
     }
     Ok(request)
-}
-
-/// Renders an upgrade URL for a log with the credential masked.
-fn redacted_url(uri: &Uri) -> String {
-    let query = uri.query().unwrap_or_default();
-    let masked: Vec<String> = query
-        .split('&')
-        .map(|pair| match pair.split_once('=') {
-            Some((key, _)) if crate::redact::is_sensitive(key) => format!("{key}={REDACTED}"),
-            _ => pair.to_owned(),
-        })
-        .collect();
-    format!(
-        "{}://{}{}?{}",
-        uri.scheme_str().unwrap_or("ws"),
-        uri.authority().map_or("", |authority| authority.as_str()),
-        uri.path(),
-        masked.join("&"),
-    )
 }
 
 impl fmt::Debug for Socket {
@@ -1011,9 +992,9 @@ mod tests {
     #[test]
     fn a_logged_upgrade_url_hides_the_credential() {
         let request = build_request("192.168.1.100", &Auth::token("supersecret"), false).unwrap();
-        let logged = redacted_url(request.uri());
+        let logged = safe_query_url(&request.uri().to_string());
         assert!(!logged.contains("supersecret"), "{logged}");
-        assert!(logged.contains(REDACTED), "{logged}");
+        assert!(logged.contains(crate::redact::REDACTED), "{logged}");
         assert!(logged.contains("vsn=2.0.0"), "{logged}");
     }
 

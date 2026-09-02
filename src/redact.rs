@@ -42,6 +42,25 @@ pub(crate) fn safe_url(url: &str) -> Cow<'_, str> {
     }
 }
 
+/// Returns `url` with its userinfo stripped and any credential-bearing query
+/// value masked, ready for a log line.
+#[cfg(any(feature = "cloud", feature = "websocket"))]
+pub(crate) fn safe_query_url(url: &str) -> String {
+    let url = safe_url(url);
+    let Some((base, query)) = url.split_once('?') else {
+        return url.into_owned();
+    };
+
+    let masked: Vec<String> = query
+        .split('&')
+        .map(|pair| match pair.split_once('=') {
+            Some((key, _)) if is_sensitive(key) => format!("{key}={REDACTED}"),
+            _ => pair.to_owned(),
+        })
+        .collect();
+    format!("{base}?{}", masked.join("&"))
+}
+
 /// Renders a response body for a debug log with credential values masked.
 #[cfg(feature = "cloud")]
 ///
@@ -68,12 +87,6 @@ pub(crate) fn is_sensitive(key: &str) -> bool {
     SENSITIVE_KEYS
         .iter()
         .any(|sensitive| sensitive.eq_ignore_ascii_case(key))
-}
-
-/// Masks `value` when `key` names a credential, for logging key/value pairs.
-#[cfg(feature = "cloud")]
-pub(crate) fn safe_value<'a>(key: &str, value: &'a str) -> &'a str {
-    if is_sensitive(key) { REDACTED } else { value }
 }
 
 #[cfg(test)]
@@ -112,6 +125,19 @@ mod tests {
         assert_eq!(
             safe_url("http://[2001:db8::1]:8080/api/v1/system"),
             "http://[2001:db8::1]:8080/api/v1/system"
+        );
+    }
+
+    #[cfg(any(feature = "cloud", feature = "websocket"))]
+    #[test]
+    fn masks_credentials_in_a_query() {
+        assert_eq!(
+            safe_query_url("ws://admin:pw@unit/api/websocket?vsn=2.0.0&token=supersecret"),
+            "ws://unit/api/websocket?vsn=2.0.0&token=[REDACTED]"
+        );
+        assert_eq!(
+            safe_query_url("http://unit/api/v1/sites?q=home"),
+            "http://unit/api/v1/sites?q=home"
         );
     }
 

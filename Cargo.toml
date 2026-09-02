@@ -48,6 +48,7 @@ tokio = { version = "1.53.1", features = [
   "macros",
   "net",
   "rt-multi-thread",
+  "signal",
   "test-util",
 ] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = [
@@ -82,3 +83,27 @@ native-tls = ["reqwest?/native-tls", "tokio-tungstenite?/native-tls"]
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[[example]]
+name = "cloud_sites"
+required-features = ["cloud", "device"]
+
+[[example]]
+name = "rest_read"
+required-features = ["device"]
+
+[[example]]
+name = "rest_set"
+required-features = ["device"]
+
+[[example]]
+name = "rest_system"
+required-features = ["device"]
+
+[[example]]
+name = "websocket_read"
+required-features = ["websocket"]
+
+[[example]]
+name = "websocket_set"
+required-features = ["websocket"]

@@ -16,8 +16,8 @@ use crate::serde_util::null_default;
 /// `platform`, `device_class`, `state_class`, `unit_of_measurement`, `min`,
 /// `max`, `options`, `payload_on`, and `payload_off` describe the metric for
 /// Home Assistant discovery. Over REST they are populated when the request asks
-/// for them (the default; see [`MetricsRequest::discovery`]). Over the
-/// WebSocket they come from the `definition` event and are merged into every
+/// for them, which is the default (`metrics().discovery(false)` opts out).
+/// Over the WebSocket they come from the `definition` event and are merged into every
 /// metric before it reaches you. Units running a build older than 2026-05-07
 /// leave them `None`.
 ///
@@ -26,8 +26,6 @@ use crate::serde_util::null_default;
 /// `value` stays untyped: the server sends strings, numbers, and booleans
 /// depending on the topic, and the topic set is server-driven. Use
 /// [`Metric::as_f64`] and friends to read it.
-///
-/// [`MetricsRequest::discovery`]: crate::device::MetricsRequest::discovery
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 #[non_exhaustive]

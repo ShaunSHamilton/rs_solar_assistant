@@ -119,8 +119,7 @@ impl Client {
     /// Short-lived token and connection details for one site.
     ///
     /// The token works for both cloud-proxied and local connections; feed it
-    /// to a [`device::Client`](crate::device::Client) or a
-    /// [`Socket`](crate::socket::Socket) through [`Auth::from`].
+    /// to a device client or a socket by converting it with [`Auth::from`].
     pub async fn authorize_site(&self, site_id: u64) -> Result<AuthorizeResponse> {
         let body = self
             .post(&format!("{SITES_PATH}/{site_id}/authorize"))

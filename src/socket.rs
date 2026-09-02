@@ -96,14 +96,12 @@ type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 /// Two shapes, matching the two ways a unit is reachable:
 ///
 /// - [`Options::local`] - straight to the unit on your own network.
-/// - [`Options::cloud`] - through the cloud proxy, with a token from
-///   [`authorize_site`](crate::cloud::Client::authorize_site).
+/// - [`Options::cloud`] - through the cloud proxy, with a token from the
+///   cloud client's `authorize_site`.
 ///
 /// Combine them with [`Options::host`] to try the local network first and fall
-/// back to the proxy; an
-/// [`AuthorizeResponse`](crate::cloud::AuthorizeResponse) converts into
-/// exactly that arrangement. There is no way to build options with nowhere to
-/// dial.
+/// back to the proxy; an `AuthorizeResponse` converts into exactly that
+/// arrangement. There is no way to build options with nowhere to dial.
 #[derive(Clone, Debug)]
 pub struct Options {
     target: Target,

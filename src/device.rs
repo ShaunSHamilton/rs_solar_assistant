@@ -1,8 +1,8 @@
 //! Client for a SolarAssistant unit's own REST API.
 //!
 //! Reaches a unit two ways: directly on its local network with the web
-//! password, or through the cloud proxy with a token from
-//! [`cloud::Client::authorize_site`](crate::cloud::Client::authorize_site).
+//! password, or through the cloud proxy with a token from the cloud client's
+//! `authorize_site`.
 //!
 //! ```no_run
 //! use rs_solar_assistant::{Auth, DeviceClient};

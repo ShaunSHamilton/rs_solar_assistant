@@ -8,9 +8,9 @@
 //!
 //! | Module | Talks to | Use it for |
 //! | ------ | -------- | ---------- |
-//! | [`cloud`] | `solar-assistant.io` | Listing sites, minting a short-lived site token |
-//! | [`device`] | A unit, directly or through the cloud proxy | Reading and writing metrics on demand |
-//! | [`socket`] | A unit's Phoenix Channels WebSocket | Streaming metrics as they change |
+//! | `cloud` | `solar-assistant.io` | Listing sites, minting a short-lived site token |
+//! | `device` | A unit, directly or through the cloud proxy | Reading and writing metrics on demand |
+//! | `socket` | A unit's Phoenix Channels WebSocket | Streaming metrics as they change |
 //!
 //! # Reading metrics from a unit on your network
 //!
@@ -71,9 +71,9 @@
 //!
 //! | Feature | Default | Brings in |
 //! | ------- | ------- | --------- |
-//! | `cloud` | yes | [`cloud::Client`], on `reqwest` |
-//! | `device` | yes | [`device::Client`], on `reqwest` |
-//! | `websocket` | yes | [`socket::Socket`], on `tokio-tungstenite` |
+//! | `cloud` | yes | `cloud::Client`, on `reqwest` |
+//! | `device` | yes | `device::Client`, on `reqwest` |
+//! | `websocket` | yes | `socket::Socket`, on `tokio-tungstenite` |
 //! | `rustls-tls` | yes | TLS through `rustls` |
 //! | `native-tls` | no | TLS through the platform's TLS stack |
 //!

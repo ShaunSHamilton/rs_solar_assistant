@@ -78,7 +78,8 @@
 //! | `native-tls` | no | TLS through the platform's TLS stack |
 //!
 //! Pick exactly one TLS backend. A REST-only consumer can drop the WebSocket
-//! dependency tree with `default-features = false, features = ["device", "rustls-tls"]`.
+//! dependency tree with `default-features = false, features = ["device",
+//! "rustls-tls"]`.
 //!
 //! # Logging
 //!

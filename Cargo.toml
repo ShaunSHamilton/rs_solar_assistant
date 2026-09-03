@@ -2,11 +2,12 @@
 name = "rs_solar_assistant"
 version = "0.1.0"
 edition = "2024"
+authors = ["Shaun Hamilton"]
 rust-version = "1.90"
 license = "Apache-2.0"
 description = "Rust client for SolarAssistant - cloud API, device REST, and real-time WebSocket"
 readme = "README.md"
-repository = "https://github.com/Solar-Assistant/rs_solar_assistant"
+repository = "https://github.com/ShaunSHamilton/rs_solar_assistant"
 keywords = ["solar-assistant", "solar", "inverter", "battery", "homeassistant"]
 categories = ["api-bindings", "web-programming::http-client"]
 

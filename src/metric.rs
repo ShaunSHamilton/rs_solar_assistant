@@ -17,9 +17,9 @@ use crate::serde_util::null_default;
 /// `max`, `options`, `payload_on`, and `payload_off` describe the metric for
 /// Home Assistant discovery. Over REST they are populated when the request asks
 /// for them, which is the default (`metrics().discovery(false)` opts out).
-/// Over the WebSocket they come from the `definition` event and are merged into every
-/// metric before it reaches you. Units running a build older than 2026-05-07
-/// leave them `None`.
+/// Over the WebSocket they come from the `definition` event and are merged into
+/// every metric before it reaches you. Units running a build older than
+/// 2026-05-07 leave them `None`.
 ///
 /// # Values
 ///

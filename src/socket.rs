@@ -96,8 +96,8 @@ type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 /// Two shapes, matching the two ways a unit is reachable:
 ///
 /// - [`Options::local`] - straight to the unit on your own network.
-/// - [`Options::cloud`] - through the cloud proxy, with a token from the
-///   cloud client's `authorize_site`.
+/// - [`Options::cloud`] - through the cloud proxy, with a token from the cloud
+///   client's `authorize_site`.
 ///
 /// Combine them with [`Options::host`] to try the local network first and fall
 /// back to the proxy; an `AuthorizeResponse` converts into exactly that
@@ -619,7 +619,8 @@ impl Socket {
         }
     }
 
-    /// Rebuilds full metrics from `data` rows, which carry only topic and value.
+    /// Rebuilds full metrics from `data` rows, which carry only topic and
+    /// value.
     fn merge(&self, payload: &Map<String, Value>) -> Vec<Metric> {
         parse_metrics(payload, "metrics")
             .into_iter()

@@ -64,7 +64,7 @@ use tokio_tungstenite::{
 use crate::{
     Auth, Metric,
     error::{Error, Result},
-    redact::{safe_query_url, safe_url},
+    redact::{REDACTED, redact_json, safe_query_url, safe_url},
 };
 
 /// How often a heartbeat frame is sent to keep the channel alive.
@@ -96,8 +96,8 @@ type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 /// Two shapes, matching the two ways a unit is reachable:
 ///
 /// - [`Options::local`] - straight to the unit on your own network.
-/// - [`Options::cloud`] - through the cloud proxy, with a token from the cloud
-///   client's `authorize_site`.
+/// - [`Options::cloud`] - through the cloud proxy, with an [`Auth::proxy`]
+///   built from the cloud client's `authorize_site`.
 ///
 /// Combine them with [`Options::host`] to try the local network first and fall
 /// back to the proxy; an `AuthorizeResponse` converts into exactly that
@@ -128,6 +128,10 @@ impl Options {
     }
 
     /// Dials the cloud proxy at `host`.
+    ///
+    /// `auth` has to be an [`Auth::proxy`]; the proxy needs the `site-id` and
+    /// `site-key` routing that carries, and [`Socket::connect`] refuses
+    /// anything else.
     pub fn cloud(host: impl Into<String>, auth: Auth) -> Self {
         Self {
             target: Target::Cloud(host.into()),
@@ -153,6 +157,9 @@ impl Options {
     /// How often to send a heartbeat frame. Defaults to
     /// [`HEARTBEAT_INTERVAL`], which is what the unit expects; shorten it when
     /// something in between drops idle connections sooner.
+    ///
+    /// Must be non-zero: [`Socket::connect`] rejects [`Duration::ZERO`] with
+    /// an [`Error::Connect`] rather than letting the heartbeat timer panic.
     #[must_use]
     pub fn heartbeat_interval(mut self, every: Duration) -> Self {
         self.heartbeat = every;
@@ -311,12 +318,23 @@ impl Socket {
     /// first with a [short timeout](LOCAL_CONNECT_TIMEOUT) and the cloud proxy
     /// picks up the failure. A cloud token works for a local connection too, so
     /// the fallback needs no second credential.
+    ///
+    /// A zero [`heartbeat_interval`](Options::heartbeat_interval) is refused
+    /// with an [`Error::Connect`] before anything is dialled.
     pub async fn connect(options: Options) -> Result<Self> {
         let Options {
             target,
             auth,
             heartbeat,
         } = options;
+        // A zero period panics in `interval_at`, and by then the connection is
+        // already up; it is refused here, while it is still a config error.
+        if heartbeat.is_zero() {
+            return Err(Error::Connect {
+                status: None,
+                message: "the heartbeat interval must be greater than zero".to_owned(),
+            });
+        }
         match target {
             Target::Local(local_ip) => {
                 Self::dial(&local_ip, &auth, false, LOCAL_CONNECT_TIMEOUT, heartbeat)
@@ -342,12 +360,14 @@ impl Socket {
         }
     }
 
-    /// Dials the cloud proxy, which only ever accepts a token.
+    /// Dials the cloud proxy, which only ever accepts a routed token.
     async fn dial_cloud(host: &str, auth: &Auth, heartbeat: Duration) -> Result<Self> {
         if !auth.is_usable_via_cloud() {
             return Err(Error::Connect {
                 status: None,
-                message: "the cloud proxy needs a token, not a web password".to_owned(),
+                message: "the cloud proxy needs a token with site-id and site-key \
+                          routing, built with `Auth::proxy`"
+                    .to_owned(),
             });
         }
         Self::dial(host, auth, true, CLOUD_CONNECT_TIMEOUT, heartbeat).await
@@ -587,7 +607,7 @@ impl Socket {
                     }
                 }
                 Step::Text(text) => {
-                    tracing::debug!(target: "rs_solar_assistant::socket", "< {text}");
+                    tracing::debug!(target: "rs_solar_assistant::socket", "< {}", safe_frame(&text));
                     if let Some(message) = decode(&text) {
                         return Some(match channel_error(&message) {
                             Some(error) => Err(error),
@@ -649,7 +669,7 @@ impl Socket {
         payload: &Value,
     ) -> Result<()> {
         let frame = encode(join_ref, msg_ref, topic, event, payload);
-        tracing::debug!(target: "rs_solar_assistant::socket", "> {frame}");
+        tracing::debug!(target: "rs_solar_assistant::socket", "> {}", safe_frame(&frame));
         self.sink.send(WsMessage::text(frame)).await?;
         Ok(())
     }
@@ -825,6 +845,32 @@ fn connect_error(error: &WsError) -> Error {
     }
 }
 
+/// Renders a frame for a debug log.
+///
+/// Credential values are masked at any depth, which covers a custom
+/// [`join_with_payload`](Socket::join_with_payload) payload, and a `set`
+/// payload loses its `value` outright: a setting can be a credential itself,
+/// and no key name marks it as one. Anything that is not JSON has no keys to
+/// mask and passes through, as elsewhere in this crate.
+fn safe_frame(raw: &str) -> String {
+    let Ok(mut frame) = serde_json::from_str::<Value>(raw) else {
+        return raw.to_owned();
+    };
+    redact_json(&mut frame);
+
+    // `[join_ref, ref, topic, event, payload]`, so the event is at 3 and the
+    // payload at 4.
+    if let Value::Array(parts) = &mut frame
+        && parts.len() >= 5
+        && matches!(parts[3].as_str(), Some("set" | "set_result"))
+        && let Value::Object(payload) = &mut parts[4]
+        && let Some(value) = payload.get_mut("value")
+    {
+        *value = Value::from(REDACTED);
+    }
+    frame.to_string()
+}
+
 /// Serialises a Phoenix frame.
 fn encode(join_ref: &str, msg_ref: &str, topic: &str, event: &str, payload: &Value) -> String {
     json!([join_ref, msg_ref, topic, event, payload]).to_string()
@@ -988,10 +1034,67 @@ mod tests {
     }
 
     #[test]
-    fn a_token_without_routing_sends_no_site_headers() {
+    fn a_token_without_routing_cannot_reach_the_cloud() {
+        assert!(!Auth::token("jwt").is_usable_via_cloud());
+
+        // The request builder stays defensive about it: no routing data, no
+        // routing headers.
         let request = build_request("proxy.example", &Auth::token("jwt"), true).unwrap();
         assert!(!request.headers().contains_key("site-id"));
         assert!(!request.headers().contains_key("site-key"));
+    }
+
+    #[tokio::test]
+    async fn a_zero_heartbeat_is_refused_instead_of_panicking() {
+        let error = Socket::connect(
+            Options::local("192.0.2.1", Auth::password("pw")).heartbeat_interval(Duration::ZERO),
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error.status(), None);
+        assert!(error.to_string().contains("heartbeat interval"), "{error}");
+    }
+
+    #[test]
+    fn a_logged_frame_hides_credentials_at_any_depth() {
+        let logged = safe_frame(
+            &json!(["1", "2", "metrics", "phx_join", {"token": "supersecret", "nested": {"password": "alsosecret"}}])
+                .to_string(),
+        );
+        assert!(!logged.contains("supersecret"), "{logged}");
+        assert!(!logged.contains("alsosecret"), "{logged}");
+        assert!(logged.contains("phx_join"), "{logged}");
+    }
+
+    #[test]
+    fn a_logged_setting_write_keeps_the_topic_and_drops_the_value() {
+        for event in ["set", "set_result"] {
+            let logged = safe_frame(&encode(
+                "1",
+                "2",
+                "metrics",
+                event,
+                &json!({"topic": "wifi/key", "value": "supersecret"}),
+            ));
+            assert!(!logged.contains("supersecret"), "{logged}");
+            assert!(logged.contains("wifi/key"), "{logged}");
+            assert!(logged.contains(REDACTED), "{logged}");
+        }
+    }
+
+    #[test]
+    fn a_logged_metric_frame_keeps_its_values() {
+        let logged = safe_frame(
+            &json!(["1", null, "metrics", "data", {"metrics": [{"topic": "total/pv_power", "value": 1234}]}])
+                .to_string(),
+        );
+        assert!(logged.contains("1234"), "{logged}");
+    }
+
+    #[test]
+    fn a_frame_that_is_not_json_passes_through() {
+        assert_eq!(safe_frame("not a frame"), "not a frame");
     }
 
     #[test]

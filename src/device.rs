@@ -168,7 +168,9 @@ impl Client {
     /// value as a string, in the same form the unit reports it.
     pub async fn set_metric(&self, topic: &str, value: &str) -> Result<()> {
         let url = self.url(METRICS_PATH, "");
-        tracing::debug!(target: "rs_solar_assistant::device", "> POST {} {topic}={value}", safe_url(&url));
+        // The topic identifies the write; the value is left out, because a
+        // setting can itself be a credential (a Wi-Fi key, a portal password).
+        tracing::debug!(target: "rs_solar_assistant::device", "> POST {} topic={topic}", safe_url(&url));
 
         let response = self
             .authenticated(self.http.post(&url))

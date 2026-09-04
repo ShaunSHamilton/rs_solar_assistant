@@ -474,6 +474,73 @@ async fn the_credential_is_redacted_in_the_debug_log() {
 }
 
 #[tokio::test]
+async fn a_written_setting_value_never_reaches_the_log() {
+    let server = Server::start(Script::default()).await;
+    let host = server.host();
+
+    let logs = support::capture_logs(async {
+        let mut socket = Socket::connect(Options::local(host, Auth::password("x")))
+            .await
+            .unwrap();
+        socket.set_setting("wifi/key", "supersecret").await.unwrap();
+        socket.close().await.unwrap();
+    })
+    .await;
+
+    assert!(!logs.contains("supersecret"), "{logs}");
+    assert!(logs.contains("wifi/key"), "{logs}");
+}
+
+#[tokio::test]
+async fn a_credential_in_a_custom_join_payload_is_redacted() {
+    let server = Server::start(Script::default()).await;
+    let host = server.host();
+
+    let logs = support::capture_logs(async {
+        let mut socket = Socket::connect(Options::local(host, Auth::password("x")))
+            .await
+            .unwrap();
+        socket
+            .join_with_payload(
+                "metrics",
+                json!({"credentials": {"password": "supersecret"}}),
+            )
+            .await
+            .unwrap();
+        socket.close().await.unwrap();
+    })
+    .await;
+
+    assert!(!logs.contains("supersecret"), "{logs}");
+    assert!(logs.contains("[REDACTED]"), "{logs}");
+}
+
+#[tokio::test]
+async fn a_zero_heartbeat_interval_is_refused() {
+    let server = Server::start(Script::default()).await;
+
+    let error = Socket::connect(
+        Options::local(server.host(), Auth::password("x")).heartbeat_interval(Duration::ZERO),
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(error.status(), None);
+    assert!(error.to_string().contains("heartbeat interval"), "{error}");
+}
+
+#[tokio::test]
+async fn a_token_without_routing_is_refused_for_the_cloud() {
+    let error = Socket::connect(Options::cloud("proxy.invalid", Auth::token("jwt")))
+        .await
+        .unwrap_err();
+
+    let message = error.to_string();
+    assert!(message.contains("site-id"), "{message}");
+    assert!(message.contains("site-key"), "{message}");
+}
+
+#[tokio::test]
 async fn the_channel_is_kept_alive_with_heartbeats() {
     let server = Server::start(Script::default()).await;
     let mut socket = Socket::connect(

@@ -14,7 +14,8 @@ use crate::redact::REDACTED;
 /// - [`Auth::token`] - a short-lived JWT from the cloud API, for a local
 ///   connection without knowing the web password.
 /// - [`Auth::proxy`] - the same JWT plus the site routing headers, required
-///   when reaching a unit through the cloud proxy.
+///   when reaching a unit through the cloud proxy. It is the only variant a
+///   cloud-proxied connection accepts; see [`Auth::is_usable_via_cloud`].
 #[derive(Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Auth {
@@ -57,10 +58,19 @@ impl Auth {
 
     /// Whether this credential can reach a unit through the cloud proxy.
     ///
-    /// A web password is only ever accepted on the local network.
+    /// Only [`Auth::proxy`] can: a web password is never accepted off the
+    /// local network, and a bare token carries no `site-id` / `site-key` for
+    /// the proxy to route with.
     #[must_use]
     pub fn is_usable_via_cloud(&self) -> bool {
-        matches!(self, Self::Token { .. })
+        matches!(
+            self,
+            Self::Token {
+                site_id: Some(_),
+                site_key: Some(_),
+                ..
+            }
+        )
     }
 }
 
@@ -97,9 +107,26 @@ mod tests {
     }
 
     #[test]
-    fn only_tokens_work_through_the_cloud() {
+    fn only_a_routed_token_works_through_the_cloud() {
         assert!(!Auth::password("pw").is_usable_via_cloud());
-        assert!(Auth::token("jwt").is_usable_via_cloud());
+        assert!(!Auth::token("jwt").is_usable_via_cloud());
         assert!(Auth::proxy("jwt", 1, "k").is_usable_via_cloud());
+    }
+
+    #[test]
+    fn half_the_routing_is_not_enough_for_the_cloud() {
+        let no_key = Auth::Token {
+            token: "jwt".to_owned(),
+            site_id: Some(1),
+            site_key: None,
+        };
+        assert!(!no_key.is_usable_via_cloud());
+
+        let no_id = Auth::Token {
+            token: "jwt".to_owned(),
+            site_id: None,
+            site_key: Some("k".to_owned()),
+        };
+        assert!(!no_id.is_usable_via_cloud());
     }
 }

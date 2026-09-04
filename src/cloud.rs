@@ -29,7 +29,7 @@ use serde_json::{Map, Value};
 use crate::{
     Auth,
     error::{Error, Result},
-    redact::{REDACTED, safe_body, safe_query_url},
+    redact::{REDACTED, safe_json, safe_query_url},
     serde_util::null_default,
 };
 
@@ -55,7 +55,7 @@ pub struct Client {
 
 /// Builder for a [`Client`] with a non-default base URL, timeout, or
 /// pre-configured [`reqwest::Client`].
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ClientBuilder {
     api_key: String,
     base_url: String,
@@ -120,11 +120,18 @@ impl Client {
     ///
     /// The token works for both cloud-proxied and local connections; feed it
     /// to a device client or a socket by converting it with [`Auth::from`].
+    ///
+    /// A response missing any of `host`, `site_id`, `site_key`, or `token`
+    /// is rejected here as an [`Error::InvalidResponse`], rather than handed
+    /// on as empty credentials that resurface later as an unrelated connection
+    /// error.
     pub async fn authorize_site(&self, site_id: u64) -> Result<AuthorizeResponse> {
         let body = self
             .post(&format!("{SITES_PATH}/{site_id}/authorize"))
             .await?;
-        parse_json(&body, "authorization")
+        let authorization: AuthorizeResponse = parse_json(&body, "authorization")?;
+        check_authorization(&authorization)?;
+        Ok(authorization)
     }
 
     /// `GET <path>`, returning the raw response body.
@@ -177,7 +184,7 @@ impl Client {
         let response = self.http.execute(request).await?;
         let status = response.status();
         let body = response.bytes().await?;
-        tracing::debug!(target: "rs_solar_assistant::cloud", "< {status} {}", safe_body(&body));
+        tracing::debug!(target: "rs_solar_assistant::cloud", "< {status} {}", safe_json(&body));
 
         if !status.is_success() {
             return Err(Error::api(name, &url, status.as_u16()));
@@ -233,6 +240,18 @@ impl ClientBuilder {
 impl fmt::Debug for Client {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Client")
+            .field("api_key", &REDACTED)
+            .field("base_url", &self.base_url)
+            .field("timeout", &self.timeout)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Hides the API key, exactly as [`Client`] does: a builder is as likely to
+/// end up in a `{:?}` or an `unwrap` panic as the client it builds.
+impl fmt::Debug for ClientBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClientBuilder")
             .field("api_key", &REDACTED)
             .field("base_url", &self.base_url)
             .field("timeout", &self.timeout)
@@ -495,6 +514,31 @@ impl From<AuthorizeResponse> for Auth {
     }
 }
 
+/// Rejects an authorization that cannot actually reach a site.
+///
+/// `#[serde(default)]` keeps [`AuthorizeResponse`] tolerant of null and
+/// unknown fields, which also means `{}` parses cleanly. Checking the fields a
+/// connection needs turns that into an error at the call that produced it.
+fn check_authorization(authorization: &AuthorizeResponse) -> Result<()> {
+    let missing: Vec<&str> = [
+        ("host", authorization.host.is_empty()),
+        ("site_id", authorization.site_id == 0),
+        ("site_key", authorization.site_key.is_empty()),
+        ("token", authorization.token.is_empty()),
+    ]
+    .into_iter()
+    .filter_map(|(field, missing)| missing.then_some(field))
+    .collect();
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(Error::InvalidResponse(format!(
+        "the authorization is missing {}",
+        missing.join(", ")
+    )))
+}
+
 /// Parses a response body, reporting the shape that was expected rather than
 /// serde's positional complaint.
 fn parse_json<T: serde::de::DeserializeOwned>(body: &[u8], what: &str) -> Result<T> {
@@ -571,6 +615,38 @@ mod tests {
     fn debug_never_prints_the_api_key() {
         let rendered = format!("{:?}", Client::new("super-secret-key"));
         assert!(!rendered.contains("super-secret-key"), "{rendered}");
+    }
+
+    #[test]
+    fn builder_debug_never_prints_the_api_key() {
+        let rendered = format!("{:?}", Client::builder("super-secret-key"));
+        assert!(!rendered.contains("super-secret-key"), "{rendered}");
+        assert!(rendered.contains(REDACTED), "{rendered}");
+    }
+
+    #[test]
+    fn an_authorization_needs_every_field_a_connection_uses() {
+        let complete = AuthorizeResponse {
+            host: "proxy.example".to_owned(),
+            site_id: 7,
+            site_key: "key".to_owned(),
+            token: "jwt".to_owned(),
+            ..AuthorizeResponse::default()
+        };
+        assert!(check_authorization(&complete).is_ok());
+
+        let error = check_authorization(&AuthorizeResponse::default()).unwrap_err();
+        let message = error.to_string();
+        for field in ["host", "site_id", "site_key", "token"] {
+            assert!(message.contains(field), "{message}");
+        }
+
+        let error = check_authorization(&AuthorizeResponse {
+            token: String::new(),
+            ..complete
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("token"), "{error}");
     }
 
     #[test]

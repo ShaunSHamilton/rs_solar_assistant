@@ -201,18 +201,37 @@ async fn authorizes_a_site() {
 }
 
 #[tokio::test]
-async fn authorization_defaults_when_the_response_is_empty() {
+async fn an_empty_authorization_is_rejected_rather_than_defaulted() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .respond_with(ok(json!({})))
         .mount(&server)
         .await;
 
-    let authorization = client_for(&server).authorize_site(1).await.unwrap();
+    let error = client_for(&server).authorize_site(1).await.unwrap_err();
 
-    assert_eq!(authorization.host, "");
-    assert_eq!(authorization.site_id, 0);
-    assert_eq!(authorization.token, "");
+    assert_eq!(error.status(), None);
+    let message = error.to_string();
+    for field in ["host", "site_id", "site_key", "token"] {
+        assert!(message.contains(field), "{message}");
+    }
+}
+
+#[tokio::test]
+async fn an_authorization_missing_one_field_is_rejected() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ok(json!({
+            "host": "proxy.example",
+            "site_id": 7,
+            "site_key": "abc",
+        })))
+        .mount(&server)
+        .await;
+
+    let error = client_for(&server).authorize_site(7).await.unwrap_err();
+
+    assert!(error.to_string().contains("token"), "{error}");
 }
 
 #[tokio::test]
@@ -271,9 +290,10 @@ async fn credentials_are_redacted_in_the_debug_log() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .respond_with(ok(json!({
+            "host": "h",
+            "site_id": 1,
             "token": "supersecret",
             "site_key": "topsecret",
-            "host": "h",
         })))
         .mount(&server)
         .await;

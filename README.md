@@ -268,7 +268,7 @@ while let Some(event) = events.next().await {
 
 ## Logging
 
-Requests, frames, and replies are logged through [`tracing`](https://docs.rs/tracing) at `DEBUG`, with credentials masked first: URLs lose their `user:pass@` userinfo, and `token`, `site_key`, `api_key`, and `password` values are replaced with `[REDACTED]`. Nothing is printed until you install a subscriber:
+Requests, frames, and replies are logged through [`tracing`](https://docs.rs/tracing) at `DEBUG`, with credentials masked first: URLs lose their `user:pass@` userinfo, and `token`, `site_key`, `api_key`, and `password` values are replaced with `[REDACTED]` wherever they appear, however deeply nested. The value written by `set_metric` and `set_setting` is left out of the log altogether, since a setting can be a credential itself and no key name marks it as one. Nothing is printed until you install a subscriber:
 
 ```rust,no_run
 # fn example() {

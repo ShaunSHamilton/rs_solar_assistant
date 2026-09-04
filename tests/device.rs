@@ -12,6 +12,8 @@ use wiremock::{
     matchers::{method, path, query_param},
 };
 
+mod support;
+
 /// A metrics row as a unit reports it.
 fn row(topic: &str) -> Value {
     json!({
@@ -274,6 +276,24 @@ async fn writing_a_setting_posts_the_topic_and_value() {
     let body: HashMap<String, String> = serde_json::from_slice(&request.body).unwrap();
     assert_eq!(body["topic"], "inverter_1/charge_current_limit");
     assert_eq!(body["value"], "40");
+}
+
+#[tokio::test]
+async fn a_written_setting_value_never_reaches_the_log() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ok(json!({})))
+        .mount(&server)
+        .await;
+    let client = client_for(&server, Auth::password("x"));
+
+    let logs = support::capture_logs(async {
+        client.set_metric("wifi/key", "supersecret").await.unwrap();
+    })
+    .await;
+
+    assert!(!logs.contains("supersecret"), "{logs}");
+    assert!(logs.contains("wifi/key"), "{logs}");
 }
 
 #[tokio::test]

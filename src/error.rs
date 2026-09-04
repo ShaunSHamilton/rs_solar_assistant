@@ -111,11 +111,12 @@ impl Error {
     }
 }
 
-#[cfg(test)]
+// Both cases below are REST-only, so with no HTTP client compiled in there is
+// nothing left to test and the module itself goes away.
+#[cfg(all(test, feature = "rest"))]
 mod tests {
     use super::*;
 
-    #[cfg(feature = "rest")]
     #[test]
     fn api_error_reports_its_status_and_hides_userinfo() {
         let err = Error::api("GET", "http://admin:secret@device/api/v1/metrics", 401);

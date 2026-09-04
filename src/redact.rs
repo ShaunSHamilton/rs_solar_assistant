@@ -2,11 +2,12 @@
 //!
 //! Two rules, both inherited from the Python client and both security relevant:
 //! URLs lose their `user:pass@` userinfo, and JSON bodies lose the values of
-//! well-known credential keys.
+//! well-known credential keys, however deeply nested.
 
+#[cfg(any(feature = "rest", feature = "websocket"))]
 use std::borrow::Cow;
 
-#[cfg(feature = "cloud")]
+#[cfg(any(feature = "cloud", feature = "websocket"))]
 use serde_json::Value;
 
 /// Placeholder substituted for a credential value.
@@ -21,6 +22,7 @@ pub(crate) const SENSITIVE_KEYS: &[&str] =
 ///
 /// Everything else - port, path, query, IPv6 brackets - is preserved verbatim,
 /// so the result stays useful in a diagnostic.
+#[cfg(any(feature = "rest", feature = "websocket"))]
 pub(crate) fn safe_url(url: &str) -> Cow<'_, str> {
     let Some(scheme_end) = url.find("://") else {
         return Cow::Borrowed(url);
@@ -61,21 +63,40 @@ pub(crate) fn safe_query_url(url: &str) -> String {
     format!("{base}?{}", masked.join("&"))
 }
 
-/// Renders a response body for a debug log with credential values masked.
-#[cfg(feature = "cloud")]
+/// Masks every credential value in `value`, in place and at any depth.
 ///
-/// Non-JSON and non-object bodies are returned as trimmed text: there are no
-/// keys to mask, and dropping the body entirely would defeat the log.
-pub(crate) fn safe_body(body: &[u8]) -> String {
-    let text = String::from_utf8_lossy(body).trim().to_string();
-    match serde_json::from_str::<Value>(&text) {
-        Ok(Value::Object(mut map)) => {
-            for (key, value) in &mut map {
+/// Objects and arrays are walked recursively, because a credential is as
+/// likely to arrive as `{"data":{"token":…}}` or `[{"api_key":…}]` as it is at
+/// the top level.
+#[cfg(any(feature = "cloud", feature = "websocket"))]
+pub(crate) fn redact_json(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, value) in map {
                 if is_sensitive(key) {
                     *value = Value::from(REDACTED);
+                } else {
+                    redact_json(value);
                 }
             }
-            Value::Object(map).to_string()
+        }
+        Value::Array(items) => items.iter_mut().for_each(redact_json),
+        _ => {}
+    }
+}
+
+/// Renders a JSON document for a debug log with credential values masked.
+///
+/// Anything that is not a JSON object or array is returned as trimmed text:
+/// there are no keys to mask, and dropping the body entirely would defeat the
+/// log.
+#[cfg(feature = "cloud")]
+pub(crate) fn safe_json(document: &[u8]) -> String {
+    let text = String::from_utf8_lossy(document).trim().to_string();
+    match serde_json::from_slice::<Value>(document) {
+        Ok(mut json) if json.is_object() || json.is_array() => {
+            redact_json(&mut json);
+            json.to_string()
         }
         _ => text,
     }
@@ -89,7 +110,9 @@ pub(crate) fn is_sensitive(key: &str) -> bool {
         .any(|sensitive| sensitive.eq_ignore_ascii_case(key))
 }
 
-#[cfg(test)]
+// Every helper below is feature-gated, so with none of them compiled in there
+// is nothing left to test and the module itself goes away.
+#[cfg(all(test, any(feature = "rest", feature = "websocket")))]
 mod tests {
     use super::*;
 
@@ -128,6 +151,14 @@ mod tests {
         );
     }
 
+    #[test]
+    fn strips_only_the_last_at_in_the_authority() {
+        assert_eq!(
+            safe_url("http://user:p@ss@host/path?a=b@c"),
+            "http://host/path?a=b@c"
+        );
+    }
+
     #[cfg(any(feature = "cloud", feature = "websocket"))]
     #[test]
     fn masks_credentials_in_a_query() {
@@ -141,28 +172,51 @@ mod tests {
         );
     }
 
-    #[test]
-    fn strips_only_the_last_at_in_the_authority() {
-        assert_eq!(
-            safe_url("http://user:p@ss@host/path?a=b@c"),
-            "http://host/path?a=b@c"
-        );
-    }
-
     #[cfg(feature = "cloud")]
     #[test]
     fn masks_credential_fields_in_a_json_body() {
         let body = br#"{"token": "supersecret", "site_key": "topsecret", "host": "h"}"#;
-        let redacted = safe_body(body);
-        assert!(redacted.contains(REDACTED));
-        assert!(!redacted.contains("supersecret"));
-        assert!(!redacted.contains("topsecret"));
-        assert!(redacted.contains(r#""host":"h""#));
+        let redacted = safe_json(body);
+        assert!(redacted.contains(REDACTED), "{redacted}");
+        assert!(!redacted.contains("supersecret"), "{redacted}");
+        assert!(!redacted.contains("topsecret"), "{redacted}");
+        assert!(redacted.contains(r#""host":"h""#), "{redacted}");
+    }
+
+    #[cfg(feature = "cloud")]
+    #[test]
+    fn masks_credentials_nested_in_an_object() {
+        let redacted = safe_json(br#"{"data": {"inner": {"token": "supersecret"}}}"#);
+        assert!(!redacted.contains("supersecret"), "{redacted}");
+        assert!(redacted.contains(REDACTED), "{redacted}");
+    }
+
+    #[cfg(feature = "cloud")]
+    #[test]
+    fn masks_credentials_inside_a_top_level_array() {
+        let redacted = safe_json(br#"[{"api_key": "supersecret"}, {"host": "h"}]"#);
+        assert!(!redacted.contains("supersecret"), "{redacted}");
+        assert!(redacted.contains(REDACTED), "{redacted}");
+        assert!(redacted.contains(r#""host":"h""#), "{redacted}");
+    }
+
+    #[cfg(feature = "cloud")]
+    #[test]
+    fn masks_a_credential_whose_value_is_not_a_string() {
+        let redacted = safe_json(br#"{"password": ["a", "b"], "list": [1, 2]}"#);
+        assert!(!redacted.contains(r#"["a","b"]"#), "{redacted}");
+        assert!(redacted.contains(r#""list":[1,2]"#), "{redacted}");
     }
 
     #[cfg(feature = "cloud")]
     #[test]
     fn passes_non_json_bodies_through() {
-        assert_eq!(safe_body(b"  <html>nope</html>  "), "<html>nope</html>");
+        assert_eq!(safe_json(b"  <html>nope</html>  "), "<html>nope</html>");
+    }
+
+    #[cfg(feature = "cloud")]
+    #[test]
+    fn passes_scalar_json_bodies_through() {
+        assert_eq!(safe_json(b"  42  "), "42");
     }
 }

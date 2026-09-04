@@ -86,7 +86,9 @@
 //! Every request, frame, and reply is logged through [`tracing`] at `DEBUG`.
 //! Credentials are masked first: URLs lose their `user:pass@` userinfo, and
 //! `token`, `site_key`, `api_key`, and `password` values are replaced with
-//! `[REDACTED]`.
+//! `[REDACTED]` wherever they appear, however deeply nested. The value a
+//! setting is written with never reaches a log line at all: a setting can be a
+//! credential itself, and no key name marks it as one.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations, clippy::pedantic)]
